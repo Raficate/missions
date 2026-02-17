@@ -1,6 +1,7 @@
 import { Injectable, signal, computed, NgZone, inject } from '@angular/core';
 import {
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
@@ -20,11 +21,15 @@ export class AuthService {
   readonly error = signal<string | null>(null);
 
   constructor() {
-    // Escuchar cambios de autenticación con Firebase SDK directo
+    // Forzar pantalla de selección de cuenta siempre
+    this.googleProvider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
+    // 1. Escuchar cambios de autenticación
     onAuthStateChanged(
       firebaseAuth,
       (user) => {
-        // NgZone.run para que Angular detecte el cambio (callback externo)
         this.ngZone.run(() => {
           this.currentUser.set(user);
           this.loading.set(false);
@@ -38,22 +43,37 @@ export class AuthService {
         });
       }
     );
+
+    // 2. Procesar resultado del redirect (cuando vuelve de Google)
+    getRedirectResult(firebaseAuth)
+      .then((result) => {
+        if (result?.user) {
+          this.ngZone.run(() => {
+            this.currentUser.set(result.user);
+            this.loading.set(false);
+          });
+        }
+      })
+      .catch((err) => {
+        this.ngZone.run(() => {
+          console.error('Redirect result error:', err?.code, err?.message);
+          if (err?.code !== 'auth/popup-closed-by-user') {
+            this.error.set('Error al completar el inicio de sesión.');
+          }
+          this.loading.set(false);
+        });
+      });
   }
 
   async loginWithGoogle(): Promise<void> {
     try {
       this.error.set(null);
       this.loading.set(true);
-      await signInWithPopup(firebaseAuth, this.googleProvider);
-      // onAuthStateChanged se encargará de actualizar currentUser
+      // Redirige a Google en la misma pestaña. El usuario elige su cuenta
+      // y vuelve automáticamente a la app. getRedirectResult lo captura.
+      await signInWithRedirect(firebaseAuth, this.googleProvider);
     } catch (err: any) {
-      console.error('Login error:', err?.code, err?.message);
-      if (err?.code === 'auth/popup-closed-by-user' ||
-          err?.code === 'auth/cancelled-popup-request') {
-        // El usuario cerró el popup voluntariamente, no mostrar error
-        this.loading.set(false);
-        return;
-      }
+      console.error('Login redirect error:', err?.code, err?.message);
       this.error.set('Error al iniciar sesión con Google. Inténtalo de nuevo.');
       this.loading.set(false);
     }

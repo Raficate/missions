@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, effect } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
@@ -22,7 +22,7 @@ import { AuthService } from '../../services/auth.service';
         @if (authService.loading()) {
           <div class="loading-spinner">
             <div class="spinner"></div>
-            <p>Cargando...</p>
+            <p>Conectando...</p>
           </div>
         } @else {
           <button class="btn-google" (click)="login()">
@@ -218,16 +218,16 @@ export class LandingComponent {
   private router = inject(Router);
 
   constructor() {
-    // Si ya está logueado, redirigir al dashboard
-    if (this.authService.isLoggedIn()) {
-      this.router.navigate(['/dashboard']);
-    }
+    // Efecto reactivo: cuando el usuario se autentique (incluido vuelta del redirect),
+    // redirigir automáticamente al dashboard
+    effect(() => {
+      if (this.authService.isLoggedIn()) {
+        this.router.navigate(['/dashboard']);
+      }
+    });
   }
 
-  async login(): Promise<void> {
-    await this.authService.loginWithGoogle();
-    if (this.authService.isLoggedIn()) {
-      this.router.navigate(['/dashboard']);
-    }
+  login(): void {
+    this.authService.loginWithGoogle();
   }
 }
