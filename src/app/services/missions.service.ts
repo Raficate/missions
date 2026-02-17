@@ -1,12 +1,12 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import {
-  Firestore,
   doc,
   getDoc,
   setDoc,
   updateDoc
-} from '@angular/fire/firestore';
+} from 'firebase/firestore';
+import { firebaseDb } from '../firebase.init';
 import { firstValueFrom } from 'rxjs';
 import {
   Mission,
@@ -19,7 +19,6 @@ import { AuthService } from './auth.service';
 @Injectable({ providedIn: 'root' })
 export class MissionsService {
   private http = inject(HttpClient);
-  private firestore = inject(Firestore);
   private authService = inject(AuthService);
 
   /** Todas las misiones disponibles */
@@ -81,7 +80,7 @@ export class MissionsService {
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
+      hash = hash & hash;
     }
     return Math.abs(hash);
   }
@@ -95,7 +94,7 @@ export class MissionsService {
     this.error.set(null);
 
     try {
-      const userDocRef = doc(this.firestore, 'users', user.uid);
+      const userDocRef = doc(firebaseDb, 'users', user.uid);
       const snapshot = await getDoc(userDocRef);
 
       if (snapshot.exists()) {
@@ -138,7 +137,6 @@ export class MissionsService {
     this.allCompleted.set(allDone);
 
     if (state.lastAssignedDate === today && state.lastMissionId) {
-      // Ya hay misión de hoy
       const mission = missions.find(m => m.id === state.lastMissionId);
       if (mission) {
         this.todayMission.set(mission);
@@ -148,7 +146,6 @@ export class MissionsService {
         );
       }
     } else {
-      // Aún no se ha pedido misión hoy
       this.todayMission.set(null);
       this.missionRevealed.set(false);
       this.todayCompleted.set(false);
@@ -182,11 +179,11 @@ export class MissionsService {
 
     try {
       // Filtrar misiones no completadas
-      let available = missions.filter(
+      const available = missions.filter(
         m => !state.completedMissionIds.includes(m.id)
       );
 
-      // Si todas completadas, usar todas (modo reinicio automático suave)
+      // Si todas completadas
       if (available.length === 0) {
         this.allCompleted.set(true);
         this.loading.set(false);
@@ -211,7 +208,7 @@ export class MissionsService {
       };
 
       // Guardar en Firestore
-      const userDocRef = doc(this.firestore, 'users', user.uid);
+      const userDocRef = doc(firebaseDb, 'users', user.uid);
       await updateDoc(userDocRef, { missionState: newState });
 
       this.missionState.set(newState);
@@ -252,7 +249,7 @@ export class MissionsService {
         completed: newCompleted
       };
 
-      const userDocRef = doc(this.firestore, 'users', user.uid);
+      const userDocRef = doc(firebaseDb, 'users', user.uid);
       await updateDoc(userDocRef, { missionState: newState });
 
       this.missionState.set(newState);
@@ -281,7 +278,7 @@ export class MissionsService {
 
     try {
       const newState = createEmptyMissionState();
-      const userDocRef = doc(this.firestore, 'users', user.uid);
+      const userDocRef = doc(firebaseDb, 'users', user.uid);
       await updateDoc(userDocRef, { missionState: newState });
 
       this.missionState.set(newState);
