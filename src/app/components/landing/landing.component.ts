@@ -218,8 +218,7 @@ export class LandingComponent {
   private router = inject(Router);
 
   constructor() {
-    // Efecto reactivo: cuando el usuario se autentique (incluido vuelta del redirect),
-    // redirigir automáticamente al dashboard
+    // Efecto reactivo: cuando el usuario se autentique, redirigir al dashboard
     effect(() => {
       if (this.authService.isLoggedIn()) {
         this.router.navigate(['/dashboard']);
@@ -227,7 +226,14 @@ export class LandingComponent {
     });
   }
 
-  login(): void {
-    this.authService.loginWithGoogle();
+  async login(): Promise<void> {
+    try {
+      await this.authService.loginWithGoogle();
+      // Si el login fue exitoso (popup), el effect() ya redirigirá
+      // Si fue redirect, getRedirectResult lo manejará y luego el effect() redirigirá
+    } catch (err) {
+      // El error ya está manejado en el servicio
+      console.error('Login failed:', err);
+    }
   }
 }

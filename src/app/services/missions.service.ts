@@ -1,12 +1,12 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import {
+  Firestore,
   doc,
   getDoc,
   setDoc,
   updateDoc
-} from 'firebase/firestore';
-import { firebaseDb } from '../firebase.init';
+} from '@angular/fire/firestore';
 import { firstValueFrom } from 'rxjs';
 import {
   Mission,
@@ -19,6 +19,7 @@ import { AuthService } from './auth.service';
 @Injectable({ providedIn: 'root' })
 export class MissionsService {
   private http = inject(HttpClient);
+  private firestore = inject(Firestore);
   private authService = inject(AuthService);
 
   /** Todas las misiones disponibles */
@@ -94,7 +95,7 @@ export class MissionsService {
     this.error.set(null);
 
     try {
-      const userDocRef = doc(firebaseDb, 'users', user.uid);
+      const userDocRef = doc(this.firestore, 'users', user.uid);
       const snapshot = await getDoc(userDocRef);
 
       if (snapshot.exists()) {
@@ -208,7 +209,7 @@ export class MissionsService {
       };
 
       // Guardar en Firestore
-      const userDocRef = doc(firebaseDb, 'users', user.uid);
+      const userDocRef = doc(this.firestore, 'users', user.uid);
       await updateDoc(userDocRef, { missionState: newState });
 
       this.missionState.set(newState);
@@ -249,7 +250,7 @@ export class MissionsService {
         completed: newCompleted
       };
 
-      const userDocRef = doc(firebaseDb, 'users', user.uid);
+      const userDocRef = doc(this.firestore, 'users', user.uid);
       await updateDoc(userDocRef, { missionState: newState });
 
       this.missionState.set(newState);
@@ -278,7 +279,7 @@ export class MissionsService {
 
     try {
       const newState = createEmptyMissionState();
-      const userDocRef = doc(firebaseDb, 'users', user.uid);
+      const userDocRef = doc(this.firestore, 'users', user.uid);
       await updateDoc(userDocRef, { missionState: newState });
 
       this.missionState.set(newState);
