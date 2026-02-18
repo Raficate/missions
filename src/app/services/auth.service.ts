@@ -30,9 +30,15 @@ export class AuthService {
     if (isPlatformBrowser(this.platformId)) {
       this.user$ = user(this.auth);
       // Suscribirse al observable para actualizar el signal
-      this.user$.subscribe((u) => {
-        this.currentUser.set(u);
-        this.loading.set(false);
+      this.user$.subscribe({
+        next: (u) => {
+          this.currentUser.set(u);
+          this.loading.set(false);
+        },
+        error: (err) => {
+          console.error('Error en user$ observable:', err);
+          this.loading.set(false);
+        }
       });
       // Manejar el resultado del redirect cuando el usuario vuelve
       this.handleRedirectResult();
@@ -47,10 +53,14 @@ export class AuthService {
       const result = await getRedirectResult(this.auth);
       if (result) {
         console.log('Usuario autenticado mediante redirect:', result.user.email);
+        // El observable user$ ya actualizará el signal automáticamente
       }
     } catch (error: any) {
       console.error('Error al procesar redirect de autenticación:', error);
-      this.error.set('Error al completar el inicio de sesión.');
+      // Solo mostrar error si no es un error de "no hay redirect pendiente"
+      if (error?.code !== 'auth/operation-not-allowed') {
+        this.error.set('Error al completar el inicio de sesión.');
+      }
     }
   }
 
@@ -58,13 +68,22 @@ export class AuthService {
     if (!isPlatformBrowser(this.platformId)) return;
 
     const provider = new GoogleAuthProvider();
+    // Forzar pantalla de selección de cuenta
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
 
     try {
       this.error.set(null);
       this.loading.set(true);
+      console.log('Intentando login con popup...');
       // Intentar con popup primero (como en resolutions)
       await signInWithPopup(this.auth, provider);
+      console.log('Popup login exitoso');
+      // El observable user$ actualizará el signal automáticamente
     } catch (error: any) {
+      console.error('Error en popup login:', error?.code, error?.message, error);
+      
       // Si el popup falla (bloqueado, cerrado, etc.), usar redirect como fallback
       if (
         error.code === 'auth/popup-blocked' ||
@@ -72,12 +91,21 @@ export class AuthService {
         error.code === 'auth/cancelled-popup-request' ||
         error.code === 'auth/unauthorized-domain'
       ) {
-        console.log('Popup bloqueado o cerrado, usando redirect...');
-        await signInWithRedirect(this.auth, provider);
+        console.log('Popup falló, usando redirect...');
+        try {
+          await signInWithRedirect(this.auth, provider);
+          // No resetear loading aquí porque la página se va a redirigir
+          return;
+        } catch (redirectError: any) {
+          console.error('Error en redirect:', redirectError?.code, redirectError?.message);
+          this.error.set('Error al iniciar sesión. Inténtalo de nuevo.');
+          this.loading.set(false);
+          throw redirectError;
+        }
       } else {
         // Re-lanzar otros errores
-        console.error('Login error:', error?.code, error?.message);
-        this.error.set('Error al iniciar sesión con Google. Inténtalo de nuevo.');
+        console.error('Login error no manejado:', error?.code, error?.message);
+        this.error.set(`Error: ${error?.message || 'Error al iniciar sesión con Google'}`);
         this.loading.set(false);
         throw error;
       }
