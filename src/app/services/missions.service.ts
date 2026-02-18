@@ -88,20 +88,34 @@ export class MissionsService {
 
   /** Carga el estado del usuario desde Firestore */
   async loadUserState(): Promise<void> {
-    const user = this.authService.currentUser();
-    if (!user) return;
+    // Esperar a que el usuario esté disponible
+    let user = this.authService.currentUser();
+    if (!user) {
+      console.warn('Usuario no disponible aún, esperando...');
+      // Esperar un poco y reintentar
+      await new Promise(resolve => setTimeout(resolve, 500));
+      user = this.authService.currentUser();
+      if (!user) {
+        console.error('Usuario no disponible después de esperar');
+        this.error.set('Usuario no autenticado. Por favor, inicia sesión de nuevo.');
+        return;
+      }
+    }
 
     this.loading.set(true);
     this.error.set(null);
 
     try {
+      console.log('Cargando estado del usuario:', user.uid);
       const userDocRef = doc(this.firestore, 'users', user.uid);
       const snapshot = await getDoc(userDocRef);
 
       if (snapshot.exists()) {
+        console.log('Documento encontrado, cargando datos...');
         const data = snapshot.data() as UserDoc;
         this.missionState.set(data.missionState || createEmptyMissionState());
       } else {
+        console.log('Documento no existe, creando nuevo usuario...');
         // Crear documento de usuario por primera vez
         const newState = createEmptyMissionState();
         const newDoc: UserDoc = {
@@ -111,13 +125,25 @@ export class MissionsService {
           missionState: newState
         };
         await setDoc(userDocRef, newDoc);
+        console.log('Usuario creado en Firestore');
         this.missionState.set(newState);
       }
 
       this.checkTodayMission();
+      console.log('Estado cargado correctamente');
     } catch (err: any) {
       console.error('Error cargando estado:', err);
-      this.error.set('Error al cargar tus datos. Revisa tu conexión.');
+      console.error('Error code:', err?.code);
+      console.error('Error message:', err?.message);
+      
+      // Mensajes de error más específicos
+      if (err?.code === 'permission-denied') {
+        this.error.set('Error de permisos. Verifica las reglas de Firestore en Firebase Console.');
+      } else if (err?.code === 'unavailable') {
+        this.error.set('Firestore no está disponible. Revisa tu conexión a internet.');
+      } else {
+        this.error.set(`Error al cargar tus datos: ${err?.message || 'Error desconocido'}`);
+      }
     } finally {
       this.loading.set(false);
     }
@@ -218,7 +244,12 @@ export class MissionsService {
       this.todayCompleted.set(false);
     } catch (err: any) {
       console.error('Error asignando misión:', err);
-      this.error.set('Error al asignar tu misión. Inténtalo de nuevo.');
+      console.error('Error code:', err?.code);
+      if (err?.code === 'permission-denied') {
+        this.error.set('Error de permisos al guardar. Verifica las reglas de Firestore.');
+      } else {
+        this.error.set('Error al asignar tu misión. Inténtalo de nuevo.');
+      }
     } finally {
       this.loading.set(false);
     }
@@ -263,7 +294,11 @@ export class MissionsService {
       this.allCompleted.set(allDone);
     } catch (err: any) {
       console.error('Error completando misión:', err);
-      this.error.set('Error al guardar. Inténtalo de nuevo.');
+      if (err?.code === 'permission-denied') {
+        this.error.set('Error de permisos al guardar. Verifica las reglas de Firestore.');
+      } else {
+        this.error.set('Error al guardar. Inténtalo de nuevo.');
+      }
     } finally {
       this.loading.set(false);
     }
@@ -289,7 +324,11 @@ export class MissionsService {
       this.missionRevealed.set(false);
     } catch (err: any) {
       console.error('Error reseteando misiones:', err);
-      this.error.set('Error al reiniciar misiones.');
+      if (err?.code === 'permission-denied') {
+        this.error.set('Error de permisos. Verifica las reglas de Firestore.');
+      } else {
+        this.error.set('Error al reiniciar misiones.');
+      }
     } finally {
       this.loading.set(false);
     }
