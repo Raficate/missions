@@ -1,4 +1,4 @@
-import { Injectable, inject, signal, computed, PLATFORM_ID } from '@angular/core';
+import { Injectable, inject, signal, computed, PLATFORM_ID, NgZone } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import {
   Auth,
@@ -16,6 +16,7 @@ import { Observable, of } from 'rxjs';
 export class AuthService {
   private auth = inject(Auth);
   private platformId = inject(PLATFORM_ID);
+  private ngZone = inject(NgZone);
 
   /** Observable del usuario actual de Firebase Auth */
   readonly user$: Observable<User | null>;
@@ -32,12 +33,16 @@ export class AuthService {
       // Suscribirse al observable para actualizar el signal
       this.user$.subscribe({
         next: (u) => {
-          this.currentUser.set(u);
-          this.loading.set(false);
+          this.ngZone.run(() => {
+            this.currentUser.set(u);
+            this.loading.set(false);
+          });
         },
         error: (err) => {
-          console.error('Error en user$ observable:', err);
-          this.loading.set(false);
+          this.ngZone.run(() => {
+            console.error('Error en user$ observable:', err);
+            this.loading.set(false);
+          });
         }
       });
       // Manejar el resultado del redirect cuando el usuario vuelve
@@ -59,7 +64,9 @@ export class AuthService {
       console.error('Error al procesar redirect de autenticación:', error);
       // Solo mostrar error si no es un error de "no hay redirect pendiente"
       if (error?.code !== 'auth/operation-not-allowed') {
-        this.error.set('Error al completar el inicio de sesión.');
+        this.ngZone.run(() => {
+          this.error.set('Error al completar el inicio de sesión.');
+        });
       }
     }
   }
@@ -74,15 +81,30 @@ export class AuthService {
     });
 
     try {
-      this.error.set(null);
-      this.loading.set(true);
+      this.ngZone.run(() => {
+        this.error.set(null);
+        this.loading.set(true);
+      });
       console.log('Intentando login con popup...');
-      // Intentar con popup primero (como en resolutions)
-      await signInWithPopup(this.auth, provider);
+      
+      // Ejecutar dentro de NgZone para evitar el warning
+      await this.ngZone.runOutsideAngular(async () => {
+        return await signInWithPopup(this.auth, provider);
+      });
+      
       console.log('Popup login exitoso');
       // El observable user$ actualizará el signal automáticamente
     } catch (error: any) {
       console.error('Error en popup login:', error?.code, error?.message, error);
+      
+      // Manejar error específico: Google no está habilitado en Firebase
+      if (error.code === 'auth/operation-not-allowed') {
+        this.ngZone.run(() => {
+          this.error.set('⚠️ El método de autenticación con Google no está habilitado. Por favor, habilítalo en Firebase Console → Authentication → Sign-in method → Google.');
+          this.loading.set(false);
+        });
+        return;
+      }
       
       // Si el popup falla (bloqueado, cerrado, etc.), usar redirect como fallback
       if (
@@ -93,20 +115,26 @@ export class AuthService {
       ) {
         console.log('Popup falló, usando redirect...');
         try {
-          await signInWithRedirect(this.auth, provider);
+          await this.ngZone.runOutsideAngular(async () => {
+            return await signInWithRedirect(this.auth, provider);
+          });
           // No resetear loading aquí porque la página se va a redirigir
           return;
         } catch (redirectError: any) {
           console.error('Error en redirect:', redirectError?.code, redirectError?.message);
-          this.error.set('Error al iniciar sesión. Inténtalo de nuevo.');
-          this.loading.set(false);
+          this.ngZone.run(() => {
+            this.error.set('Error al iniciar sesión. Inténtalo de nuevo.');
+            this.loading.set(false);
+          });
           throw redirectError;
         }
       } else {
         // Re-lanzar otros errores
         console.error('Login error no manejado:', error?.code, error?.message);
-        this.error.set(`Error: ${error?.message || 'Error al iniciar sesión con Google'}`);
-        this.loading.set(false);
+        this.ngZone.run(() => {
+          this.error.set(`Error: ${error?.message || 'Error al iniciar sesión con Google'}`);
+          this.loading.set(false);
+        });
         throw error;
       }
     }
@@ -115,11 +143,17 @@ export class AuthService {
   async logout(): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
     try {
-      this.error.set(null);
-      await signOut(this.auth);
+      this.ngZone.run(() => {
+        this.error.set(null);
+      });
+      await this.ngZone.runOutsideAngular(async () => {
+        return await signOut(this.auth);
+      });
     } catch (err: any) {
       console.error('Logout error:', err);
-      this.error.set('Error al cerrar sesión');
+      this.ngZone.run(() => {
+        this.error.set('Error al cerrar sesión');
+      });
     }
   }
 }
